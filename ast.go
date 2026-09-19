@@ -33,6 +33,7 @@ func (*CreateTableStatement) node()        {}
 func (*CreateTriggerStatement) node()      {}
 func (*CreateViewStatement) node()         {}
 func (*CreateVirtualTableStatement) node() {}
+func (*CTE) node()                         {}
 func (*DefaultConstraint) node()           {}
 func (*DeleteStatement) node()             {}
 func (*DropIndexStatement) node()          {}

@@ -252,6 +252,13 @@ func walk(v Visitor, n Node) (retNode Node, err error) {
 				nn.Columns[i] = rn.(*ResultColumn)
 			}
 		}
+		if nn.Source != nil {
+			if rn, err := walkSource(v, nn.Source); err != nil {
+				return nil, err
+			} else {
+				nn.Source = rn
+			}
+		}
 		if expr, err := walkExpr(v, nn.WhereExpr); err != nil {
 			return nil, err
 		} else {
@@ -374,7 +381,7 @@ func walk(v Visitor, n Node) (retNode Node, err error) {
 			}
 		}
 		if nn.Source != nil {
-			if rn, err := walk(v, nn.Source); err != nil {
+			if rn, err := walkSource(v, nn.Source); err != nil {
 				return nil, err
 			} else {
 				nn.Source = rn.(Source)
@@ -772,6 +779,14 @@ func walk(v Visitor, n Node) (retNode Node, err error) {
 			}
 		}
 
+	case SelectExpr:
+		if rn, err := walk(v, nn.SelectStatement); err != nil {
+			return nil, err
+		} else {
+			nn.SelectStatement = rn.(*SelectStatement)
+		}
+		n = nn
+
 	case *ParenSource:
 		if nn.X != nil {
 			if rn, err := walk(v, nn.X); err != nil {
@@ -847,6 +862,34 @@ func walk(v Visitor, n Node) (retNode Node, err error) {
 				return nil, err
 			} else {
 				nn.Constraint = rn.(JoinConstraint)
+			}
+		}
+
+	case *WithClause:
+		for i, x := range nn.CTEs {
+			if rn, err := walk(v, x); err != nil {
+				return nil, err
+			} else {
+				nn.CTEs[i] = rn.(*CTE)
+			}
+		}
+
+	case *CTE:
+		if ri, err := walkIdent(v, nn.TableName); err != nil {
+			return nil, err
+		} else {
+			nn.TableName = ri
+		}
+		if columns, err := walkIdentList(v, nn.Columns); err != nil {
+			return nil, err
+		} else {
+			nn.Columns = columns
+		}
+		if nn.Select != nil {
+			if rn, err := walk(v, nn.Select); err != nil {
+				return nil, err
+			} else {
+				nn.Select = rn.(*SelectStatement)
 			}
 		}
 
@@ -1043,6 +1086,14 @@ func walkExprList(v Visitor, a []Expr) ([]Expr, error) {
 		}
 	}
 	return a, nil
+}
+
+func walkSource(v Visitor, x Source) (Source, error) {
+	if rn, err := walk(v, x); err != nil {
+		return nil, err
+	} else {
+		return rn.(Source), nil
+	}
 }
 
 func walkConstraintList(v Visitor, a []Constraint) ([]Constraint, error) {
