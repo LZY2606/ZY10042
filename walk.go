@@ -252,6 +252,11 @@ func walk(v Visitor, n Node) (retNode Node, err error) {
 				nn.Columns[i] = rn.(*ResultColumn)
 			}
 		}
+		if source, err := walkSource(v, nn.Source); err != nil {
+			return nil, err
+		} else {
+			nn.Source = source
+		}
 		if expr, err := walkExpr(v, nn.WhereExpr); err != nil {
 			return nil, err
 		} else {
@@ -373,12 +378,10 @@ func walk(v Visitor, n Node) (retNode Node, err error) {
 				nn.Assignments[i] = rn.(*Assignment)
 			}
 		}
-		if nn.Source != nil {
-			if rn, err := walk(v, nn.Source); err != nil {
-				return nil, err
-			} else {
-				nn.Source = rn.(Source)
-			}
+		if source, err := walkSource(v, nn.Source); err != nil {
+			return nil, err
+		} else {
+			nn.Source = source
 		}
 		if expr, err := walkExpr(v, nn.WhereExpr); err != nil {
 			return nil, err
@@ -572,6 +575,15 @@ func walk(v Visitor, n Node) (retNode Node, err error) {
 			return nil, err
 		} else {
 			nn.X = expr
+		}
+
+	case SelectExpr:
+		if nn.SelectStatement != nil {
+			if rn, err := walk(v, nn.SelectStatement); err != nil {
+				return nil, err
+			} else {
+				nn.SelectStatement = rn.(*SelectStatement)
+			}
 		}
 
 	case *UnaryExpr:
@@ -864,6 +876,34 @@ func walk(v Visitor, n Node) (retNode Node, err error) {
 			nn.Columns = columns
 		}
 
+	case *WithClause:
+		for i, x := range nn.CTEs {
+			if rn, err := walk(v, x); err != nil {
+				return nil, err
+			} else {
+				nn.CTEs[i] = rn.(*CTE)
+			}
+		}
+
+	case *CTE:
+		if ri, err := walkIdent(v, nn.TableName); err != nil {
+			return nil, err
+		} else {
+			nn.TableName = ri
+		}
+		if columns, err := walkIdentList(v, nn.Columns); err != nil {
+			return nil, err
+		} else {
+			nn.Columns = columns
+		}
+		if nn.Select != nil {
+			if rn, err := walk(v, nn.Select); err != nil {
+				return nil, err
+			} else {
+				nn.Select = rn.(*SelectStatement)
+			}
+		}
+
 	case *ColumnDefinition:
 		if ri, err := walkIdent(v, nn.Name); err != nil {
 			return nil, err
@@ -1043,6 +1083,17 @@ func walkExprList(v Visitor, a []Expr) ([]Expr, error) {
 		}
 	}
 	return a, nil
+}
+
+func walkSource(v Visitor, source Source) (Source, error) {
+	if source == nil {
+		return nil, nil
+	}
+	rn, err := walk(v, source)
+	if err != nil {
+		return nil, err
+	}
+	return rn.(Source), nil
 }
 
 func walkConstraintList(v Visitor, a []Constraint) ([]Constraint, error) {

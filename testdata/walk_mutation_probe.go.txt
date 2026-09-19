@@ -1,0 +1,99 @@
+package sql_test
+
+import (
+	"errors"
+	"strings"
+	"testing"
+
+	"github.com/rqlite/sql"
+)
+
+type mutationRecorder struct {
+	events []string
+}
+
+func (v *mutationRecorder) Visit(node sql.Node) (sql.Visitor, sql.Node, error) {
+	v.events = append(v.events, "enter "+typeName(node))
+	return v, node, nil
+}
+
+func (v *mutationRecorder) VisitEnd(node sql.Node) (sql.Node, error) {
+	v.events = append(v.events, "leave "+typeName(node))
+	return node, nil
+}
+
+func typeName(node sql.Node) string {
+	switch node.(type) {
+	case *sql.SelectStatement, *sql.UpdateStatement:
+		return "statement"
+	case *sql.QualifiedTableName:
+		return "table"
+	case *sql.BinaryExpr:
+		return "where"
+	default:
+		return "other"
+	}
+}
+
+type mutationStopVisitor struct {
+	target   sql.Node
+	sentinel error
+}
+
+func (v mutationStopVisitor) Visit(node sql.Node) (sql.Visitor, sql.Node, error) {
+	if node == v.target {
+		return nil, node, v.sentinel
+	}
+	return v, node, nil
+}
+
+func (v mutationStopVisitor) VisitEnd(node sql.Node) (sql.Node, error) {
+	return node, nil
+}
+
+func TestWalkMutationProbe(t *testing.T) {
+	assertOrder(t, "SELECT target.id FROM source WHERE target.id = source.id", 1)
+	assertOrder(t, "UPDATE target SET value = source.value FROM source WHERE target.id = source.id", 2)
+
+	shallow, err := sql.NewParser(strings.NewReader("UPDATE target SET value = 1 FROM shallow")).ParseStatement()
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := shallow.(*sql.UpdateStatement).Source
+	sentinel := errors.New("stop")
+	_, err = sql.Walk(mutationStopVisitor{target: target, sentinel: sentinel}, shallow)
+	if err != sentinel {
+		t.Fatalf("error=%v, want %v", err, sentinel)
+	}
+}
+
+func assertOrder(t *testing.T, query string, sourceTableIndex int) {
+	t.Helper()
+	stmt, err := sql.NewParser(strings.NewReader(query)).ParseStatement()
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := &mutationRecorder{}
+	if _, err := sql.Walk(recorder, stmt); err != nil {
+		t.Fatalf("Walk returned error: %v", err)
+	}
+	var tableIndices []int
+	for i, event := range recorder.events {
+		if event == "enter table" {
+			tableIndices = append(tableIndices, i)
+		}
+	}
+	whereIndex := indexOf(recorder.events, "enter where")
+	if len(tableIndices) <= sourceTableIndex || whereIndex < 0 || tableIndices[sourceTableIndex] > whereIndex {
+		t.Fatalf("%s: source must be visited before where: %v", query, recorder.events)
+	}
+}
+
+func indexOf(values []string, wanted string) int {
+	for i, value := range values {
+		if value == wanted {
+			return i
+		}
+	}
+	return -1
+}

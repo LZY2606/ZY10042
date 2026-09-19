@@ -28,6 +28,7 @@ func (*CollateConstraint) node()           {}
 func (*CollateExpr) node()                 {}
 func (*ColumnDefinition) node()            {}
 func (*CommitStatement) node()             {}
+func (*CTE) node()                         {}
 func (*CreateIndexStatement) node()        {}
 func (*CreateTableStatement) node()        {}
 func (*CreateTriggerStatement) node()      {}
